@@ -26,7 +26,7 @@ bool kvarn_backend_supports_native_ops(ggml_backend_dev_t dev) {
 
     auto * reg = ggml_backend_dev_backend_reg(dev);
     const char * name = reg ? ggml_backend_reg_name(reg) : nullptr;
-    return name != nullptr && std::strstr(name, "CUDA") != nullptr;
+    return name != nullptr && (std::strstr(name, "CUDA") != nullptr || std::strstr(name, "ROCm") != nullptr);
 }
 
 size_t kvarn_record_bytes(int bits) {
