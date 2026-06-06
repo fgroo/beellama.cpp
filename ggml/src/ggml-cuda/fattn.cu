@@ -1669,11 +1669,14 @@ void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst
         }
         load_tcq_decode_alpha(ctx.device);
 
-        // Update VEC __constant__ alpha for context-adaptive mode
+        // VEC __constant__ alpha: native TCQ vec only (skipped on HIP — alpha passed to dequant kernels).
         if (d_tcq_decode_alpha_v_static == 0.0f &&
             (V->type == GGML_TYPE_TURBO3_TCQ || V->type == GGML_TYPE_TURBO2_TCQ)) {
             float alpha = tcq_compute_alpha_v(V->type, V->ne[1]);
+#if !defined(GGML_USE_HIP)
             cudaMemcpyToSymbol(d_tcq_decode_alpha_v_fattn, &alpha, sizeof(float));
+#endif
+            GGML_UNUSED(alpha);
         }
 
         // Load runtime codebooks for TCQ types (needed by both dequant and native VEC paths)
@@ -1735,10 +1738,9 @@ void ggml_cuda_flash_attn_ext(ggml_backend_cuda_context & ctx, ggml_tensor * dst
         const bool k_is_f16_q8_or_turbo = (K->type == GGML_TYPE_F16) || (K->type == GGML_TYPE_Q8_0) || turbo_k_only;
         const bool v_is_f16_q8_or_turbo = (V->type == GGML_TYPE_F16) || (V->type == GGML_TYPE_Q8_0) || turbo_v_only;
         const bool both_dequantable_512 = k_is_f16_q8_or_turbo && v_is_f16_q8_or_turbo;
+        // On HIP/ROCm, native TCQ vec FA crashes on RDNA2; use dequant→F16 path (kernels at ~1810/1850).
 #if defined(GGML_USE_HIP)
-        const bool hip_native_tcq_decode =
-            K->type == GGML_TYPE_TURBO3_TCQ || K->type == GGML_TYPE_TURBO2_TCQ ||
-            V->type == GGML_TYPE_TURBO3_TCQ || V->type == GGML_TYPE_TURBO2_TCQ;
+        const bool hip_native_tcq_decode = false;
 #else
         const bool hip_native_tcq_decode = false;
 #endif
