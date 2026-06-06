@@ -6,8 +6,8 @@ static constexpr int KVAR_N_TILE_VALUES = KVAR_N_DIM * KVAR_N_DIM;
 static constexpr int KVAR_N_SHARED_FLOATS = KVAR_N_TILE_VALUES + 6 * KVAR_N_DIM + 2;
 static constexpr int KVAR_N_SHARED_BYTES = KVAR_N_SHARED_FLOATS * sizeof(float);
 
-#if defined(GGML_USE_HIP)
-// HIP/ROCm: store tile as half to fit in 64 KB LDS (tile=32K + scales=3K ≈ 35 KB)
+#if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
+// HIP/ROCm and MUSA: store tile as half to fit in 64 KB LDS (tile=32K + scales=3K ≈ 35 KB)
 typedef half kvar_tile_t;
 static __device__ float        kvar_tile_get(const kvar_tile_t * t, int i) { return __half2float(t[i]); }
 static __device__ void         kvar_tile_put(kvar_tile_t * t, int i, float v) { t[i] = __float2half_rn(v); }
@@ -19,6 +19,9 @@ static __device__ float        kvar_tile_get(const kvar_tile_t * t, int i) { ret
 static __device__ void         kvar_tile_put(kvar_tile_t * t, int i, float v) { t[i] = v; }
 static constexpr size_t KVAR_N_SHARED_BYTES_PLATFORM = KVAR_N_SHARED_BYTES;
 #endif
+
+static_assert((KVAR_N_TILE_VALUES * sizeof(kvar_tile_t)) % sizeof(float) == 0,
+    "KVarN tile size must be float-aligned for shared memory reinterpret");
 
 static __device__ void kvarn_wht_128(float * values) {
     __syncthreads();
@@ -372,9 +375,7 @@ void ggml_cuda_op_kvarn_store(ggml_backend_cuda_context & ctx, ggml_tensor * dst
     const int n_stream = (int) (stage->ne[2] / (KVAR_N_DIM * KVAR_N_STAGE_GROUPS));
     const int groups_per_stream = (int) (records->ne[2] / n_stream);
 
-#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
-    CUDA_CHECK(cudaFuncSetAttribute((const void *) kvarn_store_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, KVAR_N_SHARED_BYTES_PLATFORM));
-#endif
+    CUDA_SET_SHARED_MEMORY_LIMIT((const void *) kvarn_store_kernel, KVAR_N_SHARED_BYTES_PLATFORM);
     kvarn_store_kernel<<<current->ne[1], KVAR_N_DIM, KVAR_N_SHARED_BYTES_PLATFORM, ctx.stream()>>>(
         (const float *) current->data,
         (const int64_t *) indices->data,

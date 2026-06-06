@@ -26,7 +26,7 @@ bool kvarn_backend_supports_native_ops(ggml_backend_dev_t dev) {
 
     auto * reg = ggml_backend_dev_backend_reg(dev);
     const char * name = reg ? ggml_backend_reg_name(reg) : nullptr;
-    return name != nullptr && (std::strstr(name, "CUDA") != nullptr || std::strstr(name, "ROCm") != nullptr);
+    return name != nullptr && (std::strstr(name, "CUDA") != nullptr || std::strstr(name, "ROCm") != nullptr || std::strstr(name, "MUSA") != nullptr);
 }
 
 size_t kvarn_record_bytes(int bits) {
@@ -302,7 +302,7 @@ llama_kv_cache_kvarn::llama_kv_cache_kvarn(
         if (offload && !kvarn_backend_supports_native_ops(dev)) {
             throw std::runtime_error(format(
                 "KVarN cache layer %u is assigned to backend %s, which has no native KVarN operations; "
-                "use CUDA or disable KV offload for the CPU fallback",
+                "use CUDA, ROCm, or MUSA, or disable KV offload for the CPU fallback",
                 il, dev ? ggml_backend_dev_name(dev) : "unknown"));
         }
 
