@@ -1048,7 +1048,13 @@ static void common_params_kvarn_normalize(common_params & params) {
             "invalid KVarN cache type combination: kvarn%d/kvarn%d", key_bits, value_bits));
     }
 
+    const int32_t user_sinkhorn_iters = params.kvarn.sinkhorn_iters;
+
     params.kvarn = llama_kvarn_params_for_type(type);
+
+    if (user_sinkhorn_iters != 16) {
+        params.kvarn.sinkhorn_iters = user_sinkhorn_iters;
+    }
 
     params.cache_kvarn_bits_k = key_bits;
     params.cache_kvarn_bits_v = value_bits;
@@ -2313,6 +2319,16 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
             parse_target_cache_type(params, /*key =*/ false, value);
         }
     ).set_env("LLAMA_ARG_CACHE_TYPE_V"));
+    add_opt(common_arg(
+        {"--kvarn-sinkhorn-iters"}, "N",
+        string_format("number of Sinkhorn iterations for KVarN variance normalization (default: %d, range: 1-64)", params.kvarn.sinkhorn_iters),
+        [](common_params & params, int value) {
+            if (value < 1 || value > 64) {
+                throw std::invalid_argument("invalid value for --kvarn-sinkhorn-iters (must be 1-64)");
+            }
+            params.kvarn.sinkhorn_iters = value;
+        }
+    ).set_env("LLAMA_ARG_KVARN_SINKHORN_ITERS"));
     add_opt(common_arg(
         {"--hellaswag"},
         "compute HellaSwag score over random tasks from datafile supplied with -f",

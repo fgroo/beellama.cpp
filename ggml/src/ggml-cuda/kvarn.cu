@@ -7,11 +7,22 @@ static constexpr int KVAR_N_SHARED_FLOATS = KVAR_N_TILE_VALUES + 6 * KVAR_N_DIM 
 static constexpr int KVAR_N_SHARED_BYTES = KVAR_N_SHARED_FLOATS * sizeof(float);
 
 #if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
-// HIP/ROCm and MUSA: store tile as half to fit in 64 KB LDS (tile=32K + scales=3K ≈ 35 KB)
+// HIP/ROCm: float tiles require ~67 KB shared memory.
+// RDNA2 has 128 KB LDS per WGP but HIP runtime may limit to 64 KB per workgroup.
+// Define GGML_KVARN_FLOAT_TILE=1 to try float tiles on HIP (may fail on RDNA2).
+#if defined(GGML_KVARN_FLOAT_TILE) && GGML_KVARN_FLOAT_TILE
+// Float tile path (same as CUDA): 67 KB, needs hipFuncSetAttribute
+typedef float kvar_tile_t;
+static __device__ float        kvar_tile_get(const kvar_tile_t * t, int i) { return t[i]; }
+static __device__ void         kvar_tile_put(kvar_tile_t * t, int i, float v) { t[i] = v; }
+static constexpr size_t KVAR_N_SHARED_BYTES_PLATFORM = KVAR_N_SHARED_BYTES;
+#else
+// Half tile path (default): fits in 64 KB LDS (tile=32K + scales=3K ≈ 35 KB)
 typedef half kvar_tile_t;
 static __device__ float        kvar_tile_get(const kvar_tile_t * t, int i) { return __half2float(t[i]); }
 static __device__ void         kvar_tile_put(kvar_tile_t * t, int i, float v) { t[i] = __float2half_rn(v); }
 static constexpr size_t KVAR_N_SHARED_BYTES_PLATFORM = KVAR_N_TILE_VALUES * sizeof(half) + (6 * KVAR_N_DIM + 2) * sizeof(float);
+#endif // GGML_KVARN_FLOAT_TILE
 #else
 // CUDA: full float tile (67 KB, requires cudaFuncSetAttribute for >48 KB)
 typedef float kvar_tile_t;
